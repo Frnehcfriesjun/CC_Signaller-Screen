@@ -3,8 +3,6 @@ function Init()
 
     peripheral.find("modem", rednet.close)
     peripheral.find("modem", rednet.open)
-
-    monitor.setTextScale(0.5)
     monitor.setCursorPos(1, 1)
     monitor.setBackgroundColor(colors.black)
     monitor.setTextColor(colors.white)
@@ -14,7 +12,7 @@ function Init()
     local file = fs.open("config.json", "r")
     if not file then
         local file = fs.open("config.json", "w")
-        file.write(textutils.serialiseJSON({ stations = {}, lines = {}, signallers = {} }))
+        file.write(textutils.serialiseJSON({ stations = {}, lines = {}, signallers = {}, texts = {} }))
         file.close()
     else
         file.close()
@@ -86,13 +84,15 @@ function wait(cond)
     return true
 end
 
-function transmit()
-
+function Transmit()
+    while true do
+        os.sleep()
+    end
 end
 
-function terminal()
+function Terminal()
     term.setTextColor(colors.lightBlue)
-    term.write("Signaller System|" .. os.getComputerID() .. " > Type 'help' for commands")
+    term.write("Signaller System | " .. os.getComputerID() .. " > Type 'help' for commands")
     term.setTextColor(colors.lime)
     print("\n\n")
     local completion = require("cc.completion")
@@ -115,7 +115,7 @@ function terminal()
     local history
     while true do
         term.setTextColor(colors.lime)
-        write("Signaller System|" .. os.getComputerID() .. " > ")
+        write("Signaller System | " .. os.getComputerID() .. " > ")
         local command = read(nil, history, function(text) return completion.choice(text, commands) end, nil)
         print("")
         if command == "shutdown" then
@@ -143,6 +143,12 @@ function terminal()
         elseif command == "add_station" then
             write("Station ID:")
             local station_id = read()
+            if config.stations[station_id] ~= nil then
+                term.setTextColor(colors.red)
+                print("Station ID is occupied")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
             write("\nStation Line:")
             local station_line = read()
             write("\nStation X:")
@@ -177,6 +183,12 @@ function terminal()
         elseif command == "remove_station" then
             write("Station ID:")
             local station_id = read()
+            if config.stations[station_id] == nil then
+                term.setTextColor(colors.red)
+                print("Station doesn't exist")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
             config.stations[station_id] = nil
             local file = fs.open("config.json", "w")
             file.write(textutils.serialiseJSON(config))
@@ -188,7 +200,7 @@ function terminal()
             term.blit(" reset the config? (y/n):", "eeeeeeeeeeeeeeeeeeeeeeeee", "fffffffffffffffffffffffff")
             local confirm = read()
             if confirm == "y" then
-                config = { stations = {}, lines = {}, signallers = {} }
+                config = { stations = {}, lines = {}, signallers = {}, texts = {} }
                 local file = fs.open("config.json", "w")
                 file.write(textutils.serialiseJSON(config))
                 file.close()
@@ -260,6 +272,12 @@ function terminal()
         elseif command == "add_line" then
             write("Line ID:")
             local line_id = read()
+            if config.lines[line_id] ~= nil then
+                term.setTextColor(colors.red)
+                print("Line ID is occupied")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
 
             write("\nStart (x,y):")
             local start_pos = read()
@@ -305,6 +323,12 @@ function terminal()
         elseif command == "remove_line" then
             write("Line ID:")
             local line_id = read()
+            if config.lines[line_id] == nil then
+                term.setTextColor(colors.red)
+                print("Line doesn't exist")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
             config.lines[line_id] = nil
             local file = fs.open("config.json", "w")
             file.write(textutils.serialiseJSON(config))
@@ -315,17 +339,110 @@ function terminal()
             show_id = not show_id
             events["update_render"] = true
             wait(function() return render_done end)
+        elseif command == "add_signaller" then
+            write("Signaller ID:")
+            local signaller_id = read()
+            if config.signallers[signaller_id] ~= nil then
+                term.setTextColor(colors.red)
+                print("Signaller ID is occupied")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
+            write("\nNext Line ID:")
+            local line_id = read()
+            if config.lines[line_id] == nil then
+                term.setTextColor(colors.red)
+                print("Line doesn't exist")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
+            write("\nSignaller pos (x,y):")
+            local signaller_pos = read()
+            local signaller_x, signaller_y = signaller_pos:match("(%d+),(%d+)")
+            signaller_x, signaller_y = tonumber(signaller_x), tonumber(signaller_y)
+            if signaller_x and signaller_y then
+                config.signallers[signaller_id] = {
+                    id = signaller_id,
+                    line_id = line_id,
+                    x = signaller_x,
+                    y = signaller_y
+                }
+                local file = fs.open("config.json", "w")
+                file.write(textutils.serialiseJSON(config))
+                file.close()
+                events["update_render"] = true
+                wait(function() return render_done end)
+            end
+        elseif command == "add_text" then
+            write("Text ID:")
+            local text_id = read()
+            if config.texts[text_id] ~= nil then
+                term.setTextColor(colors.red)
+                print("Text ID is occupied")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
+            write("Text:")
+            local text = read()
+            write("\nText pos (x,y):")
+            local text_pos = read()
+            local text_x, text_y = text_pos:match("(%d+),(%d+)")
+            text_x, text_y = tonumber(text_x), tonumber(text_y)
+            if text_x == nil or text_y == nil then goto continue end
+            write("\nIs vertical (true/false):")
+            local is_vertical = read()
+            is_vertical = isvertical == "true"
+            config.texts[text_id] = {
+                id = text_id,
+                text = text,
+                x = text_x,
+                y = text_y,
+                is_vertical = is_vertical
+            }
+            local file = fs.open("config.json", "w")
+            file.write(textutils.serialiseJSON(config))
+            file.close()
+            events["update_render"] = true
+            wait(function() return render_done end)
+        elseif command == "remove_text" then
+            write("Text ID:")
+            local text_id = read()
+            if config.texts[text_id] == nil then
+                term.setTextColor(colors.red)
+                print("Text doesn't exist")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
+            config.texts[rtext_id] = nil
+            local file = fs.open("config.json", "w")
+            file.write(textutils.serialiseJSON(config))
+            file.close()
+            events["update_render"] = true
+            wait(function() return render_done end)
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
             term.setTextColor(colors.lime)
         end
+        ::continue::
         print("")
         os.sleep()
     end
 end
 
-function render()
+function Signal_Handler()
+    while true do
+        os.sleep()
+    end
+end
+
+function Station_Handler()
+    while true do
+        os.sleep()
+    end
+end
+
+function Render()
     while true do
         wait(function() return events["update_render"] ~= nil end)
         events["update_render"] = nil
@@ -350,13 +467,13 @@ function render()
                 local x, y, line, dir = station.x, station.y, station.line, station.dir
                 monitor.setCursorPos(x, y)
                 if dir == "U" then
-                    monitor.write("^")
+                    monitor.blit("^", "0", "c")
                 elseif dir == "R" then
-                    monitor.write(">")
+                    monitor.blit(">", "0", "c")
                 elseif dir == "D" then
-                    monitor.write("v")
+                    monitor.blit("v", "0", "c")
                 elseif dir == "L" then
-                    monitor.write("<")
+                    monitor.blit("<", "0", "c")
                 end
             end
         end
@@ -377,4 +494,4 @@ function Main()
     end
 end
 
-parallel.waitForAny(Main, terminal, render)
+parallel.waitForAny(Main, Terminal, Render, Signal_Handler, Station_Handler, Transmit)

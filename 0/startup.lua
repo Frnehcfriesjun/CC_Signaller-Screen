@@ -9,23 +9,56 @@ function Init()
     monitor.clear()
     term.clear()
     term.setCursorPos(1, 1)
-    local file = fs.open("config.json", "r")
+    local file = fs.open(CONFIG_FILE, "r")
     if not file then
-        local file = fs.open("config.json", "w")
-        file.write(textutils.serialiseJSON({ stations = {}, lines = {}, signallers = {}, texts = {} }))
-        file.close()
+        config = default_config()
+        save_config()
     else
+        config = textutils.unserializeJSON(file.readAll())
         file.close()
     end
-    local file = fs.open("config.json", "r")
-    config = textutils.unserializeJSON(file.readAll())
-    file.close()
 
     events = {}
     render_done = true
 
     show_id = false
 end
+
+-- ============================================================================
+-- Configuration helpers
+-- ============================================================================
+
+CONFIG_FILE = "config.json"
+
+local function default_config()
+    return {
+        stations = {},
+        lines = {},
+        signallers = {},
+        texts = {},
+    }
+end
+
+local function save_config()
+    local file = fs.open(CONFIG_FILE, "w")
+    if not file then
+        error("Unable to open " .. CONFIG_FILE .. " for writing")
+    end
+
+    file.write(textutils.serialiseJSON(config))
+    file.close()
+end
+
+local function request_render()
+    events["update_render"] = true
+    wait(function()
+        return render_done
+    end)
+end
+
+-- ============================================================================
+-- Monitor helpers
+-- ============================================================================
 
 function reset_monitor()
     monitor.setCursorPos(1, 1)
@@ -90,6 +123,10 @@ function Transmit()
     end
 end
 
+-- ============================================================================
+-- Terminal / command interface
+-- ============================================================================
+
 function Terminal()
     term.setTextColor(colors.lightBlue)
     term.write("Signaller System | " .. os.getComputerID() .. " > Type 'help' for commands")
@@ -110,14 +147,20 @@ function Terminal()
         "element_move",
         "add_line",
         "remove_line",
+        "add_signaller",
+        "add_text",
+        "remove_text",
         "toggle_show_id"
     }
     local history
     while true do
         term.setTextColor(colors.lime)
         write("Signaller System | " .. os.getComputerID() .. " > ")
-        local command = read(nil, history, function(text) return completion.choice(text, commands) end, nil)
+        local command = read(nil, history, function(text)
+            return completion.choice(text, commands)
+        end, nil)
         print("")
+
         if command == "shutdown" then
             os.shutdown()
         elseif command == "reboot" then
@@ -138,7 +181,11 @@ function Terminal()
             print("element_move - Move an element (station/line/signaller) to x,y")
             print("add_line - Add a line")
             print("remove_line - Remove a line")
+            print("add_signaller - Add a signaller")
+            print("add_text - Add text")
+            print("remove_text - Remove text")
             print("toggle_show_id - Toggle showing IDs of lines on the monitor")
+
             term.setTextColor(colors.lime)
         elseif command == "add_station" then
             write("Station ID:")
@@ -178,8 +225,7 @@ function Terminal()
                 "\nDirection: " .. station_dir ..
                 "\n")
             term.setTextColor(colors.lime)
-            events["update_render"] = true
-            wait(function() return render_done end)
+            request_render()
         elseif command == "remove_station" then
             write("Station ID:")
             local station_id = read()
@@ -190,37 +236,29 @@ function Terminal()
                 goto continue
             end
             config.stations[station_id] = nil
-            local file = fs.open("config.json", "w")
-            file.write(textutils.serialiseJSON(config))
-            file.close()
-            events["update_render"] = true
-            wait(function() return render_done end)
+            save_config()
+            request_render()
         elseif command == "reset_config" then
             print("Are you sure to")
             term.blit(" reset the config? (y/n):", "eeeeeeeeeeeeeeeeeeeeeeeee", "fffffffffffffffffffffffff")
             local confirm = read()
             if confirm == "y" then
-                config = { stations = {}, lines = {}, signallers = {}, texts = {} }
-                local file = fs.open("config.json", "w")
-                file.write(textutils.serialiseJSON(config))
-                file.close()
-                events["update_render"] = true
-                wait(function() return render_done end)
+                config = default_config()
+                save_config()
+                request_render()
             end
         elseif command == "show_config" then
             term.setTextColor(colors.yellow)
             print(textutils.serialiseJSON(config))
             term.setTextColor(colors.lime)
         elseif command == "refresh_render" then
-            events["update_render"] = true
-            wait(function() return render_done end)
+            request_render()
         elseif command == "scale" then
             write("Set scale (0.5-5):")
             local scale = tonumber(read())
             if scale and scale >= 0.5 and scale <= 5 then
                 monitor.setTextScale(scale)
-                events["update_render"] = true
-                wait(function() return render_done end)
+                request_render()
             else
                 term.setTextColor(colors.red)
                 print("\nInvalid scale. Please enter a number value between 0.5 and 5.")
@@ -241,11 +279,8 @@ function Terminal()
                         end
                     end
                 end
-                local file = fs.open("config.json", "w")
-                file.write(textutils.serialiseJSON(config))
-                file.close()
-                events["update_render"] = true
-                wait(function() return render_done end)
+                save_config()
+                request_render()
             else
                 term.setTextColor(colors.red)
                 print("\nInvalid coordinates. Please enter in the format x,y where x and y are numbers.")
@@ -259,11 +294,8 @@ function Terminal()
             if class and index and x and y and config[class] and config[class][index] then
                 config[class][index].x = x
                 config[class][index].y = y
-                local file = fs.open("config.json", "w")
-                file.write(textutils.serialiseJSON(config))
-                file.close()
-                events["update_render"] = true
-                wait(function() return render_done end)
+                save_config()
+                request_render()
             else
                 term.setTextColor(colors.red)
                 print("\nInvalid input. Please enter in the format class,index,x,y where class and index exist.")
@@ -310,11 +342,8 @@ function Terminal()
                     text_y = text_y,
                     occupied = false
                 }
-                local file = fs.open("config.json", "w")
-                file.write(textutils.serialiseJSON(config))
-                file.close()
-                events["update_render"] = true
-                wait(function() return render_done end)
+                save_config()
+                request_render()
             else
                 term.setTextColor(colors.red)
                 print("\nInvalid input. Please enter valid line ID and coordinates.")
@@ -330,15 +359,11 @@ function Terminal()
                 goto continue
             end
             config.lines[line_id] = nil
-            local file = fs.open("config.json", "w")
-            file.write(textutils.serialiseJSON(config))
-            file.close()
-            events["update_render"] = true
-            wait(function() return render_done end)
+            save_config()
+            request_render()
         elseif command == "toggle_show_id" then
             show_id = not show_id
-            events["update_render"] = true
-            wait(function() return render_done end)
+            request_render()
         elseif command == "add_signaller" then
             write("Signaller ID:")
             local signaller_id = read()
@@ -367,11 +392,8 @@ function Terminal()
                     x = signaller_x,
                     y = signaller_y
                 }
-                local file = fs.open("config.json", "w")
-                file.write(textutils.serialiseJSON(config))
-                file.close()
-                events["update_render"] = true
-                wait(function() return render_done end)
+                save_config()
+                request_render()
             end
         elseif command == "add_text" then
             write("Text ID:")
@@ -388,10 +410,12 @@ function Terminal()
             local text_pos = read()
             local text_x, text_y = text_pos:match("(%d+),(%d+)")
             text_x, text_y = tonumber(text_x), tonumber(text_y)
-            if text_x == nil or text_y == nil then goto continue end
+            if text_x == nil or text_y == nil then
+                goto continue
+            end
             write("\nIs vertical (true/false):")
             local is_vertical = read()
-            is_vertical = isvertical == "true"
+            is_vertical = is_vertical == "true"
             config.texts[text_id] = {
                 id = text_id,
                 text = text,
@@ -399,11 +423,8 @@ function Terminal()
                 y = text_y,
                 is_vertical = is_vertical
             }
-            local file = fs.open("config.json", "w")
-            file.write(textutils.serialiseJSON(config))
-            file.close()
-            events["update_render"] = true
-            wait(function() return render_done end)
+            save_config()
+            request_render()
         elseif command == "remove_text" then
             write("Text ID:")
             local text_id = read()
@@ -413,12 +434,9 @@ function Terminal()
                 term.setTextColor(colors.lime)
                 goto continue
             end
-            config.texts[rtext_id] = nil
-            local file = fs.open("config.json", "w")
-            file.write(textutils.serialiseJSON(config))
-            file.close()
-            events["update_render"] = true
-            wait(function() return render_done end)
+            config.texts[text_id] = nil
+            save_config()
+            request_render()
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
@@ -429,6 +447,10 @@ function Terminal()
         os.sleep()
     end
 end
+
+-- ============================================================================
+-- Event handlers
+-- ============================================================================
 
 function Signal_Handler()
     while true do
@@ -442,6 +464,10 @@ function Station_Handler()
     end
 end
 
+-- ============================================================================
+-- Rendering
+-- ============================================================================
+
 function Render()
     while true do
         wait(function() return events["update_render"] ~= nil end)
@@ -453,10 +479,7 @@ function Render()
         function render_lines()
             local r_lines = config.lines
             for i, line in pairs(r_lines) do
-                local start_x, start_y, end_x, end_y = line.start_x, line.start_y, line.end_x, line.end_y
-                local text_x, text_y, is_text = line.text_x, line.text_y, line.is_text
-                local occupied = line.occupied
-                local color = occupied and colors.red or colors.white
+                local color = line.occupied and colors.red or colors.white
                 drawLine(start_x, start_y, end_x, end_y, color, show_id, i)
             end
         end
@@ -486,6 +509,10 @@ function Render()
         render_done = true
     end
 end
+
+-- ============================================================================
+-- Program entry point
+-- ============================================================================
 
 function Main()
     Init()

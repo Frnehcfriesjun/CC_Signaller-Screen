@@ -22,6 +22,7 @@ function Init()
     render_done = true
 
     show_id = false
+    show_grid = false
 end
 
 -- ============================================================================
@@ -150,7 +151,12 @@ function Terminal()
         "add_signaller",
         "add_text",
         "remove_text",
-        "toggle_show_id"
+        "toggle_show_id",
+        "add_signaller",
+        "remove_signaller",
+        "add_text",
+        "remove_text",
+        "toggle_show_grid"
     }
     local history
     while true do
@@ -185,6 +191,11 @@ function Terminal()
             print("add_text - Add text")
             print("remove_text - Remove text")
             print("toggle_show_id - Toggle showing IDs of lines on the monitor")
+            print("add_signaller - Add a signaller")
+            print("remove_signaller - Remove a signaller")
+            print("add_text - Add a text")
+            print("remove_text - Remove a text")
+            print("toggle_show_grid - Toggle showing a grid on the monitor")
 
             term.setTextColor(colors.lime)
         elseif command == "add_station" then
@@ -395,6 +406,18 @@ function Terminal()
                 save_config()
                 request_render()
             end
+        elseif command == "remove_signaller" then
+            write("Signaller ID:")
+            local signaller_id = read()
+            if config.signallers[signaller_id] == nil then
+                term.setTextColor(colors.red)
+                print("Signaller doesn't exist")
+                term.setTextColor(colors.lime)
+                goto continue
+            end
+            config.signallers[signallers_id] = nil
+            save_config()
+            request_render()
         elseif command == "add_text" then
             write("Text ID:")
             local text_id = read()
@@ -437,6 +460,9 @@ function Terminal()
             config.texts[text_id] = nil
             save_config()
             request_render()
+        elseif command == "toggle_show_grid" then
+            show_grid = not show_grid
+            request_render()
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
@@ -476,6 +502,18 @@ function Render()
         term.setTextColor(colors.orange)
         print("\nRendering...\n")
         reset_monitor()
+        function render_grid()
+            if show_grid then
+                local size_x, size_y = monitor.getSize()
+                for x = 1, size_x do
+                    for y = 1, size_y do
+                        local color = math.fmod(x + y, 2) == 0 and colors.cyan or colors.pink
+                        drawPixel(x, y, color)
+                    end
+                end
+            end
+        end
+
         function render_lines()
             local r_lines = config.lines
             for i, line in pairs(r_lines) do
@@ -501,6 +539,7 @@ function Render()
             end
         end
 
+        render_grid()
         render_lines()
         render_stations()
         term.setTextColor(colors.cyan)

@@ -25,6 +25,8 @@ function Init()
 
     events = {}
     render_done = true
+
+    show_id = false
 end
 
 function reset_monitor()
@@ -34,14 +36,31 @@ function reset_monitor()
     monitor.clear()
 end
 
-function drawLine(start_x, start_y, end_x, end_y, color)
+function drawLine(start_x, start_y, end_x, end_y, color, show_id, id)
     local func_exp = function(start_x, start_y, end_x, end_y, x)
         return ((end_y - start_y) / (end_x - start_x)) * x +
             (start_y - ((end_y - start_y) / (end_x - start_x)) * start_x)
     end
     for x = start_x, end_x do
         local y = round(func_exp(start_x, start_y, end_x, end_y, x))
-        drawPixel(x, y, color)
+        local last_y = round(func_exp(start_x, start_y, end_x, end_y, x - 1))
+        if x ~= start_x then
+            for comp = math.min(y, last_y), math.max(y, last_y) do
+                if not show_id then
+                    drawPixel(x, comp, color)
+                else
+                    monitor.setCursorPos(x, comp)
+                    monitor.write(id)
+                end
+            end
+        else
+            if not show_id then
+                drawPixel(x, y, color)
+            else
+                monitor.setCursorPos(x, y)
+                monitor.write(id)
+            end
+        end
     end
 end
 
@@ -89,7 +108,9 @@ function terminal()
         "scale",
         "render_move",
         "element_move",
-        "add_line"
+        "add_line",
+        "remove_line",
+        "toggle_show_id"
     }
     local history
     while true do
@@ -107,13 +128,17 @@ function terminal()
             print("help - Show this help message")
             print("shutdown - Shutdown the computer")
             print("reboot - Reboot the computer")
-            print("add_station - Add a station to the config")
-            print("remove_station - Remove a station from the config")
+            print("add_station - Add a station")
+            print("remove_station - Remove a station")
             print("reset_config - Reset the config to default")
             print("show_config - Show the current config")
             print("refresh_render - Refresh the render manually")
             print("scale - Set the text scale of the monitor")
             print("render_move - Move the render on the monitor by x,y")
+            print("element_move - Move an element (station/line/signaller) to x,y")
+            print("add_line - Add a line")
+            print("remove_line - Remove a line")
+            print("toggle_show_id - Toggle showing IDs of lines on the monitor")
             term.setTextColor(colors.lime)
         elseif command == "add_station" then
             write("Station ID:")
@@ -277,6 +302,19 @@ function terminal()
                 print("\nInvalid input. Please enter valid line ID and coordinates.")
                 term.setTextColor(colors.lime)
             end
+        elseif command == "remove_line" then
+            write("Line ID:")
+            local line_id = read()
+            config.lines[line_id] = nil
+            local file = fs.open("config.json", "w")
+            file.write(textutils.serialiseJSON(config))
+            file.close()
+            events["update_render"] = true
+            wait(function() return render_done end)
+        elseif command == "toggle_show_id" then
+            show_id = not show_id
+            events["update_render"] = true
+            wait(function() return render_done end)
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
@@ -302,7 +340,7 @@ function render()
                 local text_x, text_y, is_text = line.text_x, line.text_y, line.is_text
                 local occupied = line.occupied
                 local color = occupied and colors.red or colors.white
-                drawLine(start_x, start_y, end_x, end_y, color)
+                drawLine(start_x, start_y, end_x, end_y, color, show_id, i)
             end
         end
 

@@ -29,6 +29,8 @@ end
 -- Configuration helpers
 -- ============================================================================
 
+computer_id = os.getComputerID()
+
 CONFIG_FILE = "config.json"
 
 local function default_config()
@@ -81,16 +83,14 @@ function drawLine(start_x, start_y, end_x, end_y, color, show_id, id)
                 if not show_id then
                     drawPixel(x, comp, color)
                 else
-                    monitor.setCursorPos(x, comp)
-                    monitor.write(id)
+                    drawChar(x, comp, id, colors.black, colors.white)
                 end
             end
         else
             if not show_id then
                 drawPixel(x, y, color)
             else
-                monitor.setCursorPos(x, y)
-                monitor.write(id)
+                drawChar(x, y, id, colors.black, colors.white)
             end
         end
     end
@@ -101,6 +101,15 @@ function drawPixel(x, y, color)
     monitor.setBackgroundColor(color)
     monitor.write(" ")
     monitor.setBackgroundColor(colors.black)
+end
+
+function drawChar(x, y, char, back_color, text_color)
+    monitor.setCursorPos(x, y)
+    monitor.setBackgroundColor(back_color)
+    monitor.setTextColor(text_color)
+    monitor.write(char)
+    monitor.setBackgroundColor(colors.black)
+    monitor.setTextColor(colors.white)
 end
 
 function round(num)
@@ -120,6 +129,14 @@ end
 
 function Transmit()
     while true do
+        id, mes = rednet.receive("Signal_To_" .. computer_id)
+        if mes.class and mes.id then
+            if mes.class == "station" then
+                events["station_mes"] = { id = mes.id, data = mes }
+            elseif mes.class == "signaller" then
+                events["signaller_mes"] = { id = mes.id, data = mes }
+            end
+        end
         os.sleep()
     end
 end
@@ -130,7 +147,7 @@ end
 
 function Terminal()
     term.setTextColor(colors.lightBlue)
-    term.write("Signaller System | " .. os.getComputerID() .. " > Type 'help' for commands")
+    term.write("Signaller System | " .. computer_id .. " > Type 'help' for commands")
     term.setTextColor(colors.lime)
     print("\n\n")
     local completion = require("cc.completion")
@@ -138,6 +155,7 @@ function Terminal()
         "shutdown",
         "reboot",
         "help",
+        "get_id",
         "add_station",
         "remove_station",
         "reset_config",
@@ -161,7 +179,7 @@ function Terminal()
     local history
     while true do
         term.setTextColor(colors.lime)
-        write("Signaller System | " .. os.getComputerID() .. " > ")
+        write("Signaller System | " .. computer_id .. " > ")
         local command = read(nil, history, function(text)
             return completion.choice(text, commands)
         end, nil)
@@ -175,6 +193,7 @@ function Terminal()
             term.setTextColor(colors.yellow)
             print("Commands:")
             print("help - Show this help message")
+            print("get_id - Get this computer ID")
             print("shutdown - Shutdown the computer")
             print("reboot - Reboot the computer")
             print("add_station - Add a station")
@@ -224,7 +243,9 @@ function Terminal()
                 line = station_line,
                 x = tonumber(station_x),
                 y = tonumber(station_y),
-                dir = station_dir
+                dir = station_dir,
+                pres = false,
+                imm = false
             }
             file.write(textutils.serialiseJSON(config))
             file.close()
@@ -351,7 +372,8 @@ function Terminal()
                     is_text = is_text,
                     text_x = text_x,
                     text_y = text_y,
-                    occupied = false
+                    occupied = false,
+                    text = ""
                 }
                 save_config()
                 request_render()
@@ -401,7 +423,11 @@ function Terminal()
                     id = signaller_id,
                     line_id = line_id,
                     x = signaller_x,
-                    y = signaller_y
+                    y = signaller_y,
+                    type = "ENTRY_SIGNAL",
+                    state = "GREEN",
+                    block_train = {},
+                    is_force = false
                 }
                 save_config()
                 request_render()
@@ -463,6 +489,10 @@ function Terminal()
         elseif command == "toggle_show_grid" then
             show_grid = not show_grid
             request_render()
+        elseif command == "get_id" then
+            term.setTextColor(colors.yellow)
+            print("PC ID: " .. os.getComputerID())
+            term.setTextColor(colors.green)
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
@@ -480,12 +510,54 @@ end
 
 function Signal_Handler()
     while true do
+        wait(function() return events["signaller_mes"] ~= nil end)
+        local mes = events["signaller_mes"].data
+        local id = events["signaller_mes"].id
+        events["signaller_mes"] = nil
+
+        --[[
+                class = "signaller",
+                id = id,
+                type = p.getSignalType(),
+                state = p.getState(),
+                is_force = p.isForcedRed(),
+                block_train = p.listBlockingTrainNames()
+        ]]
+
+
+        if config.signallers[id] ~= nil then
+            config.signallers[id].type = mes.type
+            config.signallers[id].state = mes.state
+            config.signallers[id].is_force = mes.is_force
+            config.signallers[id].block_train = mes.block_train
+            local line_id = config.signallers[id].line_id
+            config.lines[line_id].occupied = (mes.state ~= "GREEN") and true or false
+            config.lines[line_id].text = mes.block_train[1] and mes.block_train[1] or ""
+        end
+
+        save_config()
+        request_render()
+
         os.sleep()
     end
 end
 
 function Station_Handler()
     while true do
+        wait(function() return events["station_mes"] ~= nil end)
+        local mes = events["station_mes"].data
+        local id = events["station_mes"].id
+        events["station_mes"] = nil
+
+
+        if config.stations[id] ~= nil then
+            config.stations[id].imm = mes.imm
+            config.stations[id].pres = mes.pres
+        end
+
+        save_config()
+        request_render()
+
         os.sleep()
     end
 end
@@ -518,7 +590,15 @@ function Render()
             local r_lines = config.lines
             for i, line in pairs(r_lines) do
                 local color = line.occupied and colors.red or colors.white
+                local start_x = line.start_x
+                local start_y = line.start_y
+                local end_x = line.end_x
+                local end_y = line.end_y
+                local text_x, text_y = line.text_x, line.text_y
                 drawLine(start_x, start_y, end_x, end_y, color, show_id, i)
+                if line.is_text then
+                    drawChar(start_x + text_x, start_y + text_y, line.text, color, colors.yellow)
+                end
             end
         end
 
@@ -526,21 +606,42 @@ function Render()
             local r_stations = config.stations
             for id, station in pairs(r_stations) do
                 local x, y, line, dir = station.x, station.y, station.line, station.dir
-                monitor.setCursorPos(x, y)
+                local color = station.pres and colors.orange or (station.imm and colors.purple or colors.brown)
                 if dir == "U" then
-                    monitor.blit("^", "0", "c")
+                    drawChar(x, y, "^", color, colors.white)
                 elseif dir == "R" then
-                    monitor.blit(">", "0", "c")
+                    drawChar(x, y, ">", color, colors.white)
                 elseif dir == "D" then
-                    monitor.blit("v", "0", "c")
+                    drawChar(x, y, "V", color, colors.white)
                 elseif dir == "L" then
-                    monitor.blit("<", "0", "c")
+                    drawChar(x, y, "<", color, colors.white)
                 end
+            end
+        end
+
+        function render_signallers()
+            local r_signallers = config.signallers
+            for id, signaller in pairs(r_signallers) do
+                local x, y, id, type, state, is_forced =
+                    signaller.x, signaller.y, signaller.id, signaller.type, signaller.state, signaller.is_forced
+                local char, back_color, text_color
+                if not show_id then
+                    char = (type == "ENTRY_SIGNAL") and "E" or "C"
+                    back_color = (state == "YELLOW") and colors.yellow or
+                        ((state == "GREEN") and colors.green or colors.red)
+                    text_color = is_forced and colors.red or colors.white
+                else
+                    char = id
+                    back_color = colors.yellow
+                    text_color = colors.white
+                end
+                drawChar(x, y, char, back_color, text_color)
             end
         end
 
         render_grid()
         render_lines()
+        render_signallers()
         render_stations()
         term.setTextColor(colors.cyan)
         print("\nRender done!\n")

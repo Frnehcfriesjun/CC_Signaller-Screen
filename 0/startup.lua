@@ -373,6 +373,7 @@ function Terminal()
                     text_x = text_x,
                     text_y = text_y,
                     occupied = false,
+                    caution = false,
                     text = ""
                 }
                 save_config()
@@ -532,6 +533,7 @@ function Signal_Handler()
             config.signallers[id].block_train = mes.block_train
             local line_id = config.signallers[id].line_id
             config.lines[line_id].occupied = (mes.state ~= "GREEN") and true or false
+            config.lines[line_id].caution = (mes.state == "YELLOW") and true or false
             config.lines[line_id].text = mes.block_train[1] and mes.block_train[1] or ""
         end
 
@@ -590,6 +592,7 @@ function Render()
             local r_lines = config.lines
             for i, line in pairs(r_lines) do
                 local color = line.occupied and colors.red or colors.white
+                color = line.caution and colors.yellow or color
                 local start_x = line.start_x
                 local start_y = line.start_y
                 local end_x = line.end_x
@@ -597,7 +600,7 @@ function Render()
                 local text_x, text_y = line.text_x, line.text_y
                 drawLine(start_x, start_y, end_x, end_y, color, show_id, i)
                 if line.is_text then
-                    drawChar(start_x + text_x, start_y + text_y, line.text, color, colors.yellow)
+                    drawChar(start_x + text_x, start_y + text_y, line.text, color, colors.lightBlue)
                 end
             end
         end
@@ -608,13 +611,13 @@ function Render()
                 local x, y, line, dir = station.x, station.y, station.line, station.dir
                 local color = station.pres and colors.orange or (station.imm and colors.purple or colors.brown)
                 if dir == "U" then
-                    drawChar(x, y, "^", color, colors.white)
+                    drawChar(x, y, show_id and id or "^", color, colors.white)
                 elseif dir == "R" then
-                    drawChar(x, y, ">", color, colors.white)
+                    drawChar(x, y, show_id and id or ">", color, colors.white)
                 elseif dir == "D" then
-                    drawChar(x, y, "V", color, colors.white)
+                    drawChar(x, y, show_id and id or "V", color, colors.white)
                 elseif dir == "L" then
-                    drawChar(x, y, "<", color, colors.white)
+                    drawChar(x, y, show_id and id or "<", color, colors.white)
                 end
             end
         end
@@ -629,7 +632,7 @@ function Render()
                     char = (type == "ENTRY_SIGNAL") and "E" or "C"
                     back_color = (state == "YELLOW") and colors.yellow or
                         ((state == "GREEN") and colors.green or colors.red)
-                    text_color = is_forced and colors.red or colors.white
+                    text_color = is_forced and colors.red or (state == "YELLOW") and colors.blue or colors.white
                 else
                     char = id
                     back_color = colors.yellow

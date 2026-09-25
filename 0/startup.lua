@@ -454,7 +454,7 @@ function Terminal()
                 term.setTextColor(colors.lime)
                 goto continue
             end
-            write("Text:")
+            write("\nText:")
             local text = read()
             write("\nText pos (x,y):")
             local text_pos = read()
@@ -642,10 +642,36 @@ function Render()
             end
         end
 
+        function render_texts()
+            local r_texts = config.texts
+            for id, text in pairs(r_texts) do
+                local x, y, id, text, is_vertical = text.x, text.y, text.id, text.text, text.is_vertical
+
+                if not show_id then
+                    if not is_vertical then
+                        drawChar(x, y, text, colors.black, colors.white)
+                    else
+                        for h = 1, #text do
+                            drawChar(x, y + h - 1, text:sub(h, h), colors.black, colors.white)
+                        end
+                    end
+                else
+                    if not is_vertical then
+                        drawChar(x, y, id, colors.black, colors.purple)
+                    else
+                        for h = 1, #text do
+                            drawChar(x, y + h - 1, id:sub(h, h), colors.black, colors.purple)
+                        end
+                    end
+                end
+            end
+        end
+
         render_grid()
         render_lines()
         render_signallers()
         render_stations()
+        render_texts()
         term.setTextColor(colors.cyan)
         print("\nRender done!\n")
         term.setTextColor(colors.lime)

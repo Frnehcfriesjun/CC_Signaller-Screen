@@ -112,6 +112,10 @@ function drawChar(x, y, char, back_color, text_color)
     monitor.setTextColor(colors.white)
 end
 
+-- ============================================================================
+-- Toolkits
+-- ============================================================================
+
 function round(num)
     if num - math.floor(num) >= 0.5 then
         return math.ceil(num)

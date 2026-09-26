@@ -18,7 +18,7 @@ function Init()
         file.close()
     end
 
-    events = {}
+    events = { signaller_mes = {}, station_mes = {} }
     render_done = true
 
     show_id = false
@@ -132,17 +132,38 @@ function wait(cond)
 end
 
 function Transmit()
-    while true do
-        id, mes = rednet.receive("Signal_To_" .. computer_id)
-        if mes.class and mes.id then
-            if mes.class == "station" then
-                events["station_mes"] = { id = mes.id, data = mes }
-            elseif mes.class == "signaller" then
-                events["signaller_mes"] = { id = mes.id, data = mes }
+    translist = {}
+
+
+    function receive()
+        while true do
+            local id, mes = rednet.receive("SYNC_To_" .. computer_id)
+            if mes == "SYNC" then
+                rednet.send(id, "SYNC_CON", "SYNC_CON_To_" .. id)
+                local id, mes = rednet.receive("DATA_To_" .. computer_id, 10)
+                table.insert(translist, mes)
+                rednet.send(id, "ACK", "ACK_To_" .. id)
             end
         end
-        os.sleep()
     end
+
+    function process()
+        while true do
+            local mes = table.remove(translist, 1)
+            if mes then
+                if mes.class and mes.id then
+                    if mes.class == "station" then
+                        table.insert(events.station_mes, { id = mes.id, data = mes })
+                    elseif mes.class == "signaller" then
+                        table.insert(events.signaller_mes, { id = mes.id, data = mes })
+                    end
+                end
+            end
+            os.sleep()
+        end
+    end
+
+    parallel.waitForAny(receive, process)
 end
 
 -- ============================================================================
@@ -160,11 +181,13 @@ function Terminal()
         "reboot",
         "help",
         "get_id",
+        "get_size",
         "add_station",
         "remove_station",
         "reset_config",
         "show_config",
         "refresh_render",
+        "reset_rednet",
         "scale",
         "render_move",
         "element_move",
@@ -198,6 +221,7 @@ function Terminal()
             print("Commands:")
             print("help - Show this help message")
             print("get_id - Get this computer ID")
+            print("get_size - Get the size of the monitor")
             print("shutdown - Shutdown the computer")
             print("reboot - Reboot the computer")
             print("add_station - Add a station")
@@ -323,7 +347,7 @@ function Terminal()
                 term.setTextColor(colors.lime)
             end
         elseif command == "element_move" then
-            write("Move element (class(stations/lines/signallers),id) to (x,y):")
+            write("Move element (class(stations/signallers),id) to (x,y):")
             local input = read()
             local class, index, x, y = input:match("(%a+),(%w+),(%d+),(%d+)")
             x, y = tonumber(x), tonumber(y)
@@ -413,27 +437,47 @@ function Terminal()
             end
             write("\nNext Line ID:")
             local line_id = read()
-            if config.lines[line_id] == nil then
-                term.setTextColor(colors.red)
-                print("Line doesn't exist")
-                term.setTextColor(colors.lime)
-                goto continue
+            if line_id:find("{", 1) then
+                line_id = textutils.unserialise(line_id)
+                if not line_id then
+                    term.setTextColor(colors.red)
+                    print("Wrong format (\"{\"n1\",\"n2\",...}\")")
+                    term.setTextColor(colors.lime)
+                    goto continue
+                end
+                config.signallers[signaller_id] = { line_id = {}, id = 0, x = 0, y = 0, type = "", state = "", block_train = {}, is_force = false }
+                for i = 1, #line_id do
+                    if config.lines[line_id[i]] == nil then
+                        term.setTextColor(colors.red)
+                        print("Line doesn't exist")
+                        term.setTextColor(colors.lime)
+                        goto continue
+                    end
+
+                    table.insert(config.signallers[signaller_id].line_id, 1, line_id[i])
+                end
+            else
+                if config.lines[line_id] == nil then
+                    term.setTextColor(colors.red)
+                    print("Line doesn't exist")
+                    term.setTextColor(colors.lime)
+                    goto continue
+                end
+                config.signallers[signaller_id] = { line_id = "", id = 0, x = 0, y = 0, type = "", state = "", block_train = {}, is_force = false }
+                config.signallers[signaller_id].line_id = { line_id }
             end
             write("\nSignaller pos (x,y):")
             local signaller_pos = read()
             local signaller_x, signaller_y = signaller_pos:match("(%d+),(%d+)")
             signaller_x, signaller_y = tonumber(signaller_x), tonumber(signaller_y)
             if signaller_x and signaller_y then
-                config.signallers[signaller_id] = {
-                    id = signaller_id,
-                    line_id = line_id,
-                    x = signaller_x,
-                    y = signaller_y,
-                    type = "ENTRY_SIGNAL",
-                    state = "GREEN",
-                    block_train = {},
-                    is_force = false
-                }
+                config.signallers[signaller_id].id = signaller_id
+                config.signallers[signaller_id].x = signaller_x
+                config.signallers[signaller_id].y = signaller_y
+                config.signallers[signaller_id].type = "ENTRY_SIGNAL"
+                config.signallers[signaller_id].state = "GREEN"
+                config.signallers[signaller_id].block_train = {}
+                config.signallers[signaller_id].is_force = false
                 save_config()
                 request_render()
             end
@@ -446,7 +490,7 @@ function Terminal()
                 term.setTextColor(colors.lime)
                 goto continue
             end
-            config.signallers[signallers_id] = nil
+            config.signallers[signaller_id] = nil
             save_config()
             request_render()
         elseif command == "add_text" then
@@ -498,6 +542,18 @@ function Terminal()
             term.setTextColor(colors.yellow)
             print("PC ID: " .. os.getComputerID())
             term.setTextColor(colors.green)
+        elseif command == "get_size" then
+            term.setTextColor(colors.yellow)
+            local size_x, size_y = monitor.getSize()
+            print("Size (x,y): " .. size_x .. "," .. size_y)
+            term.setTextColor(colors.lime)
+        elseif command == "reset_rednet" then
+            peripheral.find("modem", rednet.close)
+            peripheral.find("modem", rednet.open)
+            local id, mes
+            repeat
+                id, mes = rednet.receive("Signal_To_" .. computer_id, 0.2)
+            until not (id ~= nil and mes ~= nil)
         else
             term.setTextColor(colors.red)
             print("\nUnknown command. Type 'help' for a list of commands.")
@@ -515,10 +571,10 @@ end
 
 function Signal_Handler()
     while true do
-        wait(function() return events["signaller_mes"] ~= nil end)
-        local mes = events["signaller_mes"].data
-        local id = events["signaller_mes"].id
-        events["signaller_mes"] = nil
+        wait(function() return events.signaller_mes[1] ~= nil end)
+        local mes = events.signaller_mes[1].data
+        local id = events.signaller_mes[1].id
+        table.remove(events.signaller_mes, 1)
 
         --[[
                 class = "signaller",
@@ -536,13 +592,22 @@ function Signal_Handler()
             config.signallers[id].is_force = mes.is_force
             config.signallers[id].block_train = mes.block_train
             local line_id = config.signallers[id].line_id
-            config.lines[line_id].occupied = (mes.state ~= "GREEN") and true or false
-            config.lines[line_id].caution = (mes.state == "YELLOW") and true or false
-            config.lines[line_id].text = mes.block_train[1] and mes.block_train[1] or ""
+            if type(line_id) == "table" then
+                for i = 1, #line_id do
+                    config.lines[line_id[i]].occupied = (mes.state ~= "GREEN") and true or false
+                    config.lines[line_id[i]].caution = (mes.state == "YELLOW") and true or false
+                    config.lines[line_id[i]].text = mes.block_train[1] and mes.block_train[1] or ""
+                end
+            else
+                config.lines[line_id].occupied = (mes.state ~= "GREEN") and true or false
+                config.lines[line_id].caution = (mes.state == "YELLOW") and true or false
+                config.lines[line_id].text = mes.block_train[1] and mes.block_train[1] or ""
+            end
         end
 
         save_config()
         request_render()
+
 
         os.sleep()
     end
@@ -550,10 +615,10 @@ end
 
 function Station_Handler()
     while true do
-        wait(function() return events["station_mes"] ~= nil end)
-        local mes = events["station_mes"].data
-        local id = events["station_mes"].id
-        events["station_mes"] = nil
+        wait(function() return events.station_mes[1] ~= nil end)
+        local mes = events.station_mes[1].data
+        local id = events.station_mes[1].id
+        table.remove(events.station_mes, 1)
 
 
         if config.stations[id] ~= nil then
@@ -563,6 +628,7 @@ function Station_Handler()
 
         save_config()
         request_render()
+
 
         os.sleep()
     end
@@ -578,7 +644,7 @@ function Render()
         events["update_render"] = nil
         render_done = false
         term.setTextColor(colors.orange)
-        print("\nRendering...\n")
+        -- print("\nRending...\n")
         reset_monitor()
         function render_grid()
             if show_grid then
@@ -676,8 +742,8 @@ function Render()
         render_signallers()
         render_stations()
         render_texts()
-        term.setTextColor(colors.cyan)
-        print("\nRender done!\n")
+        -- term.setTextColor(colors.cyan)
+        -- print("\nRender done!\n")
         term.setTextColor(colors.lime)
         render_done = true
     end
@@ -693,5 +759,37 @@ function Main()
         os.sleep()
     end
 end
+
+function modem_test()
+    peripheral.find("modem", rednet.close)
+
+    local modem = peripheral.find("modem")
+    modem.open(os.getComputerID())
+
+    local log = fs.open("log.txt", "w")
+    log.write("")
+    log.close()
+
+    local log = fs.open("log.txt", "a")
+
+    while true do
+        local event, side, channel, replyChannel, message, distance =
+            os.pullEvent("modem_message")
+
+        print(
+            "MODEM:",
+            "side=" .. tostring(side),
+            "channel=" .. tostring(channel),
+            "reply=" .. tostring(replyChannel),
+            "distance=" .. tostring(distance)
+        )
+
+        print(textutils.serialise(message))
+        log.write(textutils.serialise(message) .. "\n")
+        os.sleep()
+    end
+end
+
+-- modem_test()
 
 parallel.waitForAny(Main, Terminal, Render, Signal_Handler, Station_Handler, Transmit)

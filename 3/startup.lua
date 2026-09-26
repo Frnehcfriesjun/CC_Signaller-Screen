@@ -39,11 +39,9 @@ end
 function Send()
     local data = {}
     local last_data = {}
+    local num = 1
     while true do
         ::back_loop::
-        term.clear()
-        term.setCursorPos(1, 1)
-        print(textutils.serialise(data))
         os.sleep()
 
         if class == "station" then
@@ -80,8 +78,10 @@ function Send()
             if tableEqual(data, last_data) then
                 goto back_loop
             end
-
-            rednet.send(target, data, "Signal_To_" .. target)
+            print(textutils.serialiseJSON(data))
+            print(num)
+            num = num + 1
+            Handshake(target, data)
             last_data = data
         elseif class == "signaller" then
             local p = peripheral.find("Create_Signal")
@@ -98,10 +98,20 @@ function Send()
             if tableEqual(data, last_data) then
                 goto back_loop
             end
-
-            rednet.send(target, data, "Signal_To_" .. target)
+            local invalid = (data.state == "GREEN" and not tableEqual(data.block_train, {})) or
+                (data.state == "RED" and tableEqual(data.block_train, {})) or
+                (data.state == "YELLOW" and not tableEqual(data.block_train, {}))
+            if invalid then
+                goto back_loop
+            end
+            print(not invalid)
+            print(textutils.serialiseJSON(data))
+            print(num)
+            num = num + 1
+            Handshake(target, data)
             last_data = data
         end
+        os.sleep()
     end
 end
 
@@ -110,6 +120,15 @@ function Recive()
         ::back_loop::
         os.sleep()
     end
+end
+
+function Handshake(target, data)
+    repeat
+        rednet.send(target, "SYNC", "SYNC_To_" .. target)
+        local id, mes = rednet.receive("SYNC_CON_To_" .. computer_id, 0.5)
+    until mes
+    rednet.send(target, data, "DATA_To_" .. target)
+    local id, mes = rednet.receive("ACK_To_" .. computer_id, 0.5)
 end
 
 function tableEqual(t1, t2)

@@ -75,18 +75,29 @@ function drawLine(start_x, start_y, end_x, end_y, color, show_id, id)
         return ((end_y - start_y) / (end_x - start_x)) * x +
             (start_y - ((end_y - start_y) / (end_x - start_x)) * start_x)
     end
-    for x = start_x, end_x do
-        local y = round(func_exp(start_x, start_y, end_x, end_y, x))
-        local last_y = round(func_exp(start_x, start_y, end_x, end_y, x - 1))
-        if x ~= start_x then
-            for comp = math.min(y, last_y), math.max(y, last_y) do
+    if start_x ~= end_x then
+        for x = start_x, end_x do
+            local y = round(func_exp(start_x, start_y, end_x, end_y, x))
+            local last_y = round(func_exp(start_x, start_y, end_x, end_y, x - 1))
+            if x ~= start_x then
+                for comp = math.min(y, last_y), math.max(y, last_y) do
+                    if not show_id then
+                        drawPixel(x, comp, color)
+                    else
+                        drawChar(x, comp, id, colors.black, colors.white)
+                    end
+                end
+            else
                 if not show_id then
-                    drawPixel(x, comp, color)
+                    drawPixel(x, y, color)
                 else
-                    drawChar(x, comp, id, colors.black, colors.white)
+                    drawChar(x, y, id, colors.black, colors.white)
                 end
             end
-        else
+        end
+    else
+        for y = start_y, end_y do
+            local x = start_x
             if not show_id then
                 drawPixel(x, y, color)
             else
@@ -594,9 +605,11 @@ function Signal_Handler()
             local line_id = config.signallers[id].line_id
             if type(line_id) == "table" then
                 for i = 1, #line_id do
-                    config.lines[line_id[i]].occupied = (mes.state ~= "GREEN") and true or false
-                    config.lines[line_id[i]].caution = (mes.state == "YELLOW") and true or false
-                    config.lines[line_id[i]].text = mes.block_train[1] and mes.block_train[1] or ""
+                    if line_id[i] then
+                        config.lines[line_id[i]].occupied = (mes.state ~= "GREEN") and true or false
+                        config.lines[line_id[i]].caution = (mes.state == "YELLOW") and true or false
+                        config.lines[line_id[i]].text = mes.block_train[1] and mes.block_train[1] or ""
+                    end
                 end
             else
                 config.lines[line_id].occupied = (mes.state ~= "GREEN") and true or false

@@ -58,7 +58,7 @@ function Send()
                     train_name = ""
                 }
                 if not tableEqual(data, last_data) then
-                    rednet.send(target, data, "Signal_To_" .. target)
+                    Handshake(target, data)
                     last_data = data
                 end
                 goto back_loop

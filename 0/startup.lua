@@ -400,23 +400,24 @@ function Terminal()
             local text_pos = read()
             local text_x, text_y = text_pos:match("(%d+),(%d+)")
             text_x, text_y = tonumber(text_x), tonumber(text_y)
-
-            if line_id and start_x and start_y and end_x and end_y then
-                config.lines[line_id] = {
-                    id = line_id,
-                    start_x = start_x,
-                    start_y = start_y,
-                    end_x = end_x,
-                    end_y = end_y,
-                    is_text = is_text,
-                    text_x = text_x,
-                    text_y = text_y,
-                    occupied = false,
-                    caution = false,
-                    text = ""
-                }
-                save_config()
-                request_render()
+            if text_x and text_y then
+                if line_id and start_x and start_y and end_x and end_y then
+                    config.lines[line_id] = {
+                        id = line_id,
+                        start_x = start_x,
+                        start_y = start_y,
+                        end_x = end_x,
+                        end_y = end_y,
+                        is_text = is_text,
+                        text_x = text_x,
+                        text_y = text_y,
+                        occupied = false,
+                        caution = false,
+                        text = ""
+                    }
+                    save_config()
+                    request_render()
+                end
             else
                 term.setTextColor(colors.red)
                 print("\nInvalid input. Please enter valid line ID and coordinates.")

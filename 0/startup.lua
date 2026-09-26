@@ -96,7 +96,7 @@ function drawLine(start_x, start_y, end_x, end_y, color, show_id, id)
             end
         end
     else
-        for y = start_y, end_y do
+        for y = math.min(start_y, end_y), math.max(start_y, end_y) do
             local x = start_x
             if not show_id then
                 drawPixel(x, y, color)
